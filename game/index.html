@@ -1,0 +1,245 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Builderbox Editor 1.0</title>
+</head>
+<body>
+    <p>Builderbox is an independent, non-commercial, hobbyist development platform. This platform is not affiliated with, endorsed by, <br >or sponsored by the Roblox Corporation or any of its subsidiaries. <br> All content created on this platform is the original work of its respective users and is intended purely for educational and entertainment purposes.</p>
+    <p>CONTROLS: Click to change block (in editor), Move player with arrows (in play mode)</p>
+    <p>Version running: a1.0, orginal branch</p>
+    <input type="checkbox" id="editormode"> placement mode<br>
+    <canvas id="game"></canvas>
+    <script>
+        const canvas = document.getElementById("game");
+        canvas.width = 800; //tiles in x = 800 / 68 = 11
+        canvas.height = 560; //tiles in y = 600 / 68 = 8
+        const ctx = canvas.getContext("2d");
+        const tileImagesSrc = [
+            "textures/air.svg",
+            "textures/grass.svg",
+            "textures/lava.svg",
+            "textures/obsidian.svg",
+            "textures/red_carpet.svg",
+            "textures/sand.svg",
+            "textures/water.svg"
+        ];
+        const tileImages = [];
+        let imagesLoaded = 0;
+        canvas.addEventListener ('click', (e) => {
+            if (!document.getElementById("editormode").checked) return; // only in placement mode
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const tileX = Math.floor(mouseX / 68);
+            const tileY = Math.floor(mouseY / 68);
+            // Cycle tile type on click
+            tiles[tileY][tileX] = (tiles[tileY][tileX] + 1) % tileImagesSrc.length;
+            render();
+        });
+
+        const tiles = [
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
+
+        // Player object
+        const player = {
+            x: 68 * 2 + 20, // start above ground
+            y: 68 * 5,
+            width: 40,
+            height: 120, // Use full SVG height for collision
+            vx: 0,
+            vy: 0
+        };
+        // Player image
+        const playerImg = new Image();
+        playerImg.src = "textures/player.svg";
+        let playerImgLoaded = false;
+        playerImg.onload = () => { playerImgLoaded = true; };
+
+        // Preload images
+        for (let i = 0; i < tileImagesSrc.length; i++) {
+            const img = new Image();
+            img.src = tileImagesSrc[i];
+            img.onload = () => {
+                imagesLoaded++;
+                if (imagesLoaded === tileImagesSrc.length) {
+                    render();
+                }
+            };
+            tileImages.push(img);
+        }
+
+        // Controls
+        const keys = { left: false, right: false, up: false };
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === 'ArrowRight') keys.right = true;
+            if (e.code === 'ArrowUp') keys.up = true;
+        });
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === 'ArrowRight') keys.right = false;
+            if (e.code === 'ArrowUp') keys.up = false;
+        });
+
+        // Physics constants
+        const GRAVITY = 0.5;
+        const MOVE_SPEED = 5;
+        const JUMP_POWER = 10;
+
+        function isSolidTile(tileType) {
+            // Only air (0) is non-solid
+            return tileType !== 0;
+        }
+
+        function getTileAtPixel(px, py) {
+            const tx = Math.floor(px / 68);
+            const ty = Math.floor(py / 68);
+            if (ty < 0 || ty >= tiles.length || tx < 0 || tx >= tiles[0].length) return 1; // treat out of bounds as solid
+            return tiles[ty][tx];
+        }
+
+        function updatePlayer() {
+            // Horizontal movement
+            if (keys.left) player.vx = -MOVE_SPEED;
+            else if (keys.right) player.vx = MOVE_SPEED;
+            else player.vx = 0;
+
+            // Jump (only if on ground)
+            if (keys.up && player.onGround) {
+                player.vy = -JUMP_POWER;
+                player.onGround = false;
+            }
+
+            // Gravity
+            player.vy += GRAVITY;
+
+            // Save old position
+            let oldX = player.x;
+            let oldY = player.y;
+
+            // Horizontal collision (check all vertical space covered by player)
+            player.x += player.vx;
+            let collidedX = false;
+            if (player.vx !== 0) {
+                for (let dy = 0; dy < player.height; dy += 10) {
+                    let left = isSolidTile(getTileAtPixel(player.x, player.y + dy));
+                    let right = isSolidTile(getTileAtPixel(player.x + player.width - 1, player.y + dy));
+                    if (left || right) {
+                        collidedX = true;
+                        break;
+                    }
+                }
+                // Also check bottom edge
+                let left = isSolidTile(getTileAtPixel(player.x, player.y + player.height - 1));
+                let right = isSolidTile(getTileAtPixel(player.x + player.width - 1, player.y + player.height - 1));
+                if (left || right) collidedX = true;
+                if (collidedX) {
+                    player.x = oldX;
+                }
+            }
+
+            // Vertical collision (check all horizontal space covered by player)
+            player.y += player.vy;
+            let collidedY = false;
+            if (player.vy !== 0) {
+                for (let dx = 0; dx < player.width; dx += 10) {
+                    let top = isSolidTile(getTileAtPixel(player.x + dx, player.y));
+                    let bottom = isSolidTile(getTileAtPixel(player.x + dx, player.y + player.height - 1));
+                    if (top || bottom) {
+                        collidedY = true;
+                        break;
+                    }
+                }
+                // Also check rightmost edge
+                let top = isSolidTile(getTileAtPixel(player.x + player.width - 1, player.y));
+                let bottom = isSolidTile(getTileAtPixel(player.x + player.width - 1, player.y + player.height - 1));
+                if (top || bottom) collidedY = true;
+                if (collidedY) {
+                    if (player.vy > 0) {
+                        // Falling, snap to top of block
+                        player.y = Math.floor((player.y + player.height - 1) / 68) * 68 - player.height;
+                        player.onGround = true;
+                    } else if (player.vy < 0) {
+                        // Jumping, snap to bottom of block
+                        player.y = Math.floor((player.y) / 68 + 1) * 68;
+                    }
+                    player.vy = 0;
+                } else {
+                    player.onGround = false;
+                }
+            }
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Draw tiles
+            for (let y = 0; y < tiles.length; y++) {
+                for (let x = 0; x < tiles[y].length; x++) {
+                    let tileType = tiles[y][x];
+                    ctx.drawImage(
+                        tileImages[tileType],
+                        x * 68,
+                        y * 68,
+                        68,
+                        68
+                    );
+                }
+            }
+            // Draw player
+            if (playerImgLoaded) {
+                ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+            } else {
+                ctx.fillStyle = "#3498db";
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+            }
+        }
+
+        // Game loop
+        let running = false;
+        let lastFrameTime = 0;
+        const FRAME_DURATION = 1000 / 60; // 60 FPS
+        function gameLoop(timestamp) {
+            if (!lastFrameTime) lastFrameTime = timestamp;
+            const delta = timestamp - lastFrameTime;
+            if (delta >= FRAME_DURATION) {
+                updatePlayer();
+                render();
+                lastFrameTime = timestamp;
+            }
+            if (running) requestAnimationFrame(gameLoop);
+        }
+
+        // Start game after images load
+        function startGame() {
+            if (!running) {
+                running = true;
+                player.onGround = false;
+                lastFrameTime = 0;
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Patch image preload to start game
+        imagesLoaded = 0;
+        for (let i = 0; i < tileImagesSrc.length; i++) {
+            tileImages[i].onload = () => {
+                imagesLoaded++;
+                if (imagesLoaded === tileImagesSrc.length) {
+                    startGame();
+                }
+            };
+        }
+
+        
+    </script>
+</body>
+</html>
